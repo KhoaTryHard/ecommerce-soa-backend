@@ -1,0 +1,6 @@
+import { Type } from 'class-transformer'; import { IsArray, IsInt, IsNumber, IsObject, IsOptional, IsPositive, IsString, Min } from 'class-validator';
+export class CreateProductDto { @IsString() name:string; @IsString() sku:string; @IsObject() category:{id:number;name:string}; @IsNumber() @IsPositive() price:number; @IsString() currency:string; @IsInt() @Min(0) stock:number; @IsOptional() @IsArray() images?:string[]; @IsObject() seller:{id:string;name:string}; }
+export class UpdateProductDto { @IsOptional() @IsString() name?:string; @IsOptional() @IsObject() category?:{id:number;name:string}; @IsOptional() @IsNumber() price?:number; @IsOptional() @IsInt() @Min(0) stock?:number; @IsOptional() @IsArray() images?:string[]; }
+export class ListProductsDto { @IsOptional() @Type(()=>Number) @IsInt() @Min(1) page=1; @IsOptional() @Type(()=>Number) @IsInt() @Min(1) limit=10; @IsOptional() @IsString() sort='created_at'; @IsOptional() @IsString() order:'asc'|'desc'='desc'; @IsOptional() @IsString() category?:string; @IsOptional() @Type(()=>Number) @IsNumber() min_price?:number; @IsOptional() @Type(()=>Number) @IsNumber() max_price?:number; }
+export class SearchDto extends ListProductsDto { @IsString() q:string; }
+export class ReserveStockDto { @IsInt() @IsPositive() quantity:number; }

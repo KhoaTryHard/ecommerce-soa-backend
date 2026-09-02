@@ -1,0 +1,3 @@
+import{Column,CreateDateColumn,Entity,PrimaryGeneratedColumn,UpdateDateColumn}from'typeorm';
+export type OrderStatus='PENDING'|'CONFIRMED'|'PROCESSING'|'SHIPPED'|'DELIVERED'|'CANCELLED';
+@Entity('orders')export class Order{@PrimaryGeneratedColumn('uuid')id:string;@Column()customerId:string;@Column({type:'jsonb'})items:Array<{product_id:string;quantity:number;unit_price:number}>;@Column({type:'decimal',precision:14,scale:2})totalAmount:number;@Column({default:'VND'})currency:string;@Column({default:'PENDING'})status:OrderStatus;@Column({unique:true})idempotencyKey:string;@CreateDateColumn()createdAt:Date;@UpdateDateColumn()updatedAt:Date;}

@@ -1,0 +1,174 @@
+name: ecommerce-soa
+x-app-env: &app-env
+  NODE_ENV: production
+  JWT_SECRET: ${JWT_SECRET:-development-jwt-secret-change-this-32chars}
+  JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-development-refresh-secret-change-32}
+  RABBITMQ_URL: amqp://${RABBITMQ_USER:-ecommerce}:${RABBITMQ_PASSWORD:-ecommerce_password}@rabbitmq:5672
+  DB_SYNCHRONIZE: "true"
+x-service: &service
+  restart: unless-stopped
+  networks: [backend]
+
+services:
+  edge:
+    image: nginx:1.27-alpine
+    ports: ["8080:80"]
+    volumes: ["./infra/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+    depends_on:
+      api-gateway-1: { condition: service_healthy }
+      api-gateway-2: { condition: service_healthy }
+    networks: [backend]
+    restart: unless-stopped
+
+  api-gateway-1:
+    <<: *service
+    build: { context: ., args: { APP_NAME: api-gateway } }
+    environment:
+      <<: *app-env
+      PORT: 3000
+      USER_SERVICE_URL: http://user-service:3001
+      PRODUCT_SERVICE_URL: http://product-service:3002
+      ORDER_SERVICE_URL: http://order-service:3003
+      PAYMENT_SERVICE_URL: http://payment-service:3004
+      NOTIFICATION_SERVICE_URL: http://notification-service:3005
+    depends_on: &gateway-deps
+      user-service: { condition: service_healthy }
+      product-service: { condition: service_healthy }
+      order-service: { condition: service_healthy }
+      payment-service: { condition: service_healthy }
+      notification-service: { condition: service_healthy }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"], interval: 10s, timeout: 3s, retries: 10 }
+  api-gateway-2:
+    <<: *service
+    build: { context: ., args: { APP_NAME: api-gateway } }
+    environment:
+      <<: *app-env
+      PORT: 3000
+      USER_SERVICE_URL: http://user-service:3001
+      PRODUCT_SERVICE_URL: http://product-service:3002
+      ORDER_SERVICE_URL: http://order-service:3003
+      PAYMENT_SERVICE_URL: http://payment-service:3004
+      NOTIFICATION_SERVICE_URL: http://notification-service:3005
+    depends_on: *gateway-deps
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"], interval: 10s, timeout: 3s, retries: 10 }
+
+  user-service:
+    <<: *service
+    build: { context: ., args: { APP_NAME: user-service } }
+    environment:
+      <<: *app-env
+      PORT: 3001
+      MYSQL_HOST: mysql-users
+      MYSQL_USER: ${MYSQL_USER:-ecommerce}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ecommerce_password}
+      MYSQL_DATABASE: users
+    depends_on: { mysql-users: { condition: service_healthy } }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/v1/health"], interval: 10s, timeout: 3s, retries: 10 }
+  product-service:
+    <<: *service
+    build: { context: ., args: { APP_NAME: product-service } }
+    environment: { <<: *app-env, PORT: 3002, ELASTICSEARCH_URL: http://elasticsearch:9200 }
+    depends_on: { elasticsearch: { condition: service_healthy } }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3002/api/v1/health"], interval: 10s, timeout: 3s, retries: 10 }
+  order-service:
+    <<: *service
+    build: { context: ., args: { APP_NAME: order-service } }
+    environment:
+      <<: *app-env
+      PORT: 3003
+      POSTGRES_HOST: postgres-orders
+      POSTGRES_USER: ${POSTGRES_USER:-ecommerce}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ecommerce_password}
+      POSTGRES_DB: orders
+      PRODUCT_SERVICE_URL: http://product-service:3002
+    depends_on: { postgres-orders: { condition: service_healthy }, rabbitmq: { condition: service_healthy }, product-service: { condition: service_healthy } }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3003/api/v1/health"], interval: 10s, timeout: 3s, retries: 10 }
+  payment-service:
+    <<: *service
+    build: { context: ., args: { APP_NAME: payment-service } }
+    environment:
+      <<: *app-env
+      PORT: 3004
+      POSTGRES_HOST: postgres-payments
+      POSTGRES_USER: ${POSTGRES_USER:-ecommerce}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ecommerce_password}
+      POSTGRES_DB: payments
+      PAYMENT_GATEWAY_URL: ${PAYMENT_GATEWAY_URL:-}
+      PAYMENT_GATEWAY_USERNAME: ${PAYMENT_GATEWAY_USERNAME:-MERCHANT_001}
+      PAYMENT_GATEWAY_PASSWORD: ${PAYMENT_GATEWAY_PASSWORD:-change-me}
+    depends_on: { postgres-payments: { condition: service_healthy }, rabbitmq: { condition: service_healthy } }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3004/api/v1/health"], interval: 10s, timeout: 3s, retries: 10 }
+  notification-service:
+    <<: *service
+    build: { context: ., args: { APP_NAME: notification-service } }
+    environment:
+      <<: *app-env
+      PORT: 3005
+      POSTGRES_HOST: postgres-notifications
+      POSTGRES_USER: ${POSTGRES_USER:-ecommerce}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ecommerce_password}
+      POSTGRES_DB: notifications
+    depends_on: { postgres-notifications: { condition: service_healthy }, rabbitmq: { condition: service_healthy } }
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3005/api/v1/health"], interval: 10s, timeout: 3s, retries: 10 }
+
+  mysql-users:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-local_root_password}
+      MYSQL_DATABASE: users
+      MYSQL_USER: ${MYSQL_USER:-ecommerce}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ecommerce_password}
+    volumes: [mysql-users-data:/var/lib/mysql]
+    networks: [backend]
+    healthcheck: { test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$${MYSQL_ROOT_PASSWORD}"], interval: 10s, timeout: 5s, retries: 15 }
+  postgres-orders:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: ${POSTGRES_USER:-ecommerce}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ecommerce_password}
+    volumes: [postgres-orders-data:/var/lib/postgresql/data]
+    networks: [backend]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d orders"], interval: 10s, timeout: 5s, retries: 10 }
+  postgres-payments:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: payments
+      POSTGRES_USER: ${POSTGRES_USER:-ecommerce}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ecommerce_password}
+    volumes: [postgres-payments-data:/var/lib/postgresql/data]
+    networks: [backend]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d payments"], interval: 10s, timeout: 5s, retries: 10 }
+  postgres-notifications:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: notifications
+      POSTGRES_USER: ${POSTGRES_USER:-ecommerce}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ecommerce_password}
+    volumes: [postgres-notifications-data:/var/lib/postgresql/data]
+    networks: [backend]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d notifications"], interval: 10s, timeout: 5s, retries: 10 }
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.3
+    environment: { discovery.type: single-node, xpack.security.enabled: "false", ES_JAVA_OPTS: "-Xms512m -Xmx512m" }
+    volumes: [elasticsearch-data:/usr/share/elasticsearch/data]
+    networks: [backend]
+    healthcheck: { test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health >/dev/null"], interval: 10s, timeout: 5s, retries: 20 }
+  rabbitmq:
+    image: rabbitmq:4.0-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-ecommerce}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-ecommerce_password}
+    ports: ["15672:15672"]
+    volumes: [rabbitmq-data:/var/lib/rabbitmq]
+    networks: [backend]
+    healthcheck: { test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"], interval: 10s, timeout: 5s, retries: 10 }
+  redis:
+    image: redis:7.4-alpine
+    command: redis-server --appendonly yes
+    volumes: [redis-data:/data]
+    networks: [backend]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 10s, timeout: 3s, retries: 10 }
+
+networks: { backend: { driver: bridge } }
+volumes: { mysql-users-data: {}, postgres-orders-data: {}, postgres-payments-data: {}, postgres-notifications-data: {}, elasticsearch-data: {}, rabbitmq-data: {}, redis-data: {} }

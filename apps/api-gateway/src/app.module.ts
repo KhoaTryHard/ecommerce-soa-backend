@@ -1,0 +1,1 @@
+import{Controller,Get,Module}from'@nestjs/common';@Controller()class GatewayController{@Get('health')health(){return{status:'ok',service:'api-gateway',instance:process.env.HOSTNAME}}}@Module({controllers:[GatewayController]})export class AppModule{}

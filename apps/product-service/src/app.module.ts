@@ -1,0 +1,2 @@
+import { Module } from '@nestjs/common';import{ConfigModule}from'@nestjs/config';import{JwtModule}from'@nestjs/jwt';import{JwtAuthGuard,RolesGuard}from'@app/common';import{ProductController,HealthController}from'./product.controller';import{ProductService}from'./product.service';
+@Module({imports:[ConfigModule.forRoot({isGlobal:true}),JwtModule.register({})],controllers:[ProductController,HealthController],providers:[ProductService,JwtAuthGuard,RolesGuard]})export class AppModule{}

@@ -1,0 +1,1 @@
+import{Column,CreateDateColumn,Entity,PrimaryGeneratedColumn}from'typeorm';@Entity('notifications')export class Notification{@PrimaryGeneratedColumn('uuid')id:string;@Column()eventType:string;@Column()recipientId:string;@Column()channel:'EMAIL'|'SMS'|'PUSH';@Column()status:'SENT'|'FAILED';@Column({type:'jsonb'})payload:unknown;@CreateDateColumn()createdAt:Date;}
